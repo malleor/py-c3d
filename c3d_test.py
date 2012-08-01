@@ -5,7 +5,7 @@ import numpy
 import logging
 import tempfile
 
-import c3d
+from lmj import c3d
 
 if __name__ == '__main__':
     logging.basicConfig(
@@ -21,5 +21,5 @@ if __name__ == '__main__':
 
     with tempfile.TemporaryFile() as h:
         frame = (numpy.array([[1, 2, 3, 4]] * 50, 'd'), [])
-        w = c3d.Writer(h)
+        w = c3d.Writer(h.file)
         w.write_like_phasespace([frame] * 50, 50)

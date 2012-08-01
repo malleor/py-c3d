@@ -3,5 +3,6 @@
 *.so
 *.py[oc]
 *.egg-info
+*.c3d
 dist
 build
