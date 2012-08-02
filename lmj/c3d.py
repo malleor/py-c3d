@@ -34,20 +34,20 @@ class Header(object):
     BINARY_FORMAT = 'BBHHHHHfHHf270sHH214s'
 
     def __init__(self, handle=None):
-	self.label_block = 0
-	self.parameter_block = 2
-	self.data_block = 3
+        self.label_block = 0
+        self.parameter_block = 2
+        self.data_block = 3
 
-	self.point_count = 50
-	self.analog_count = 0
+        self.point_count = 50
+        self.analog_count = 0
 
-	self.first_frame = 1
-	self.last_frame = 1
-	self.sample_per_frame = 0
-	self.frame_rate = 60.0
+        self.first_frame = 1
+        self.last_frame = 1
+        self.sample_per_frame = 0
+        self.frame_rate = 60.0
 
-	self.max_gap = 0
-	self.scale_factor = -1.0
+        self.max_gap = 0
+        self.scale_factor = -1.0
         self.long_event_labels = False
 
         if handle:
@@ -96,7 +96,7 @@ long_event_labels: %(long_event_labels)s
         This method reads exactly 512 bytes from the beginning of the file.
         '''
         handle.seek(0)
-	(self.parameter_block,
+        (self.parameter_block,
          _,
          self.point_count,
          self.analog_count,
@@ -154,7 +154,7 @@ class Param(object):
         handle: If provided, the data for the parameter will be read from this
           file handle.
         '''
-	self.name = name
+        self.name = name
         self.desc = desc
 
         self.negative_data_size = data_size < 0
@@ -209,24 +209,24 @@ dimensions: %(dimensions)s
         This reads exactly enough data from the current position in the file to
         initialize the parameter.
         '''
-	self.data_size, = struct.unpack('b', handle.read(1))
+        self.data_size, = struct.unpack('b', handle.read(1))
         if self.data_size < 0:
             self.negative_data_size = True
             self.data_size = abs(self.data_size)
 
-	count, = struct.unpack('B', handle.read(1))
-	self.dimensions = [
+        count, = struct.unpack('B', handle.read(1))
+        self.dimensions = [
             struct.unpack('B', handle.read(1))[0] for _ in xrange(count)]
 
         count = reduce(operator.mul, self.dimensions, 1)
-	self.bytes = None
+        self.bytes = None
         if self.data_size * count:
             self.bytes = handle.read(self.data_size * count)
         else:
             logging.debug('zero data_size * count !')
 
         size, = struct.unpack('B', handle.read(1))
-	self.desc = size and handle.read(size) or ''
+        self.desc = size and handle.read(size) or ''
 
         logging.info('''loaded C3D parameter information:
       name: %(name)s
@@ -428,32 +428,33 @@ class Reader(Manager):
         simultaneously. The four dimensions in the point data are typically
         (x, y, z) and a "confidence" estimate for the point.
         '''
-        # find out where we seek to start reading frame data.
+        # find out where we seek to start reading data.
         start_block = self.group('POINT').get_uint16('DATA_START')
         if start_block != self.header.data_block:
             logging.info('start_block %d != data_block %d',
                          start_block, self.header.data_block)
 
-        # read frame and analog data in either float or int format.
+        # read video and analog data in either float or int format.
         format = 'fi'[self.group('POINT').get_float('SCALE') >= 0]
-        ppf = self.points_per_frame()
-        apf = self.analog_per_frame()
+        ppvf = self.points_per_frame()      # points per video frame
+        pc = 4                              # point coords/'channels'
+        apvf = self.analog_per_frame()      # analog frames per video frame
+        ac = self.header.analog_count/apvf  # analog channels
 
         self._handle.seek((self.header.data_block - 1) * 512)
         start = self._handle.tell()
         f = 0
         for f in xrange(self.end_field() - self.start_field() + 1):
             points = array.array(format)
-            points.fromfile(self._handle, 4 * ppf)
+            points.fromfile(self._handle, pc * ppvf)
             analog = array.array(format)
-            analog.fromfile(self._handle, apf)
-            yield (numpy.array(points).reshape((ppf, 4)), numpy.array(analog))
+            analog.fromfile(self._handle, ac * apvf)
+            yield (numpy.array(points).reshape((ppvf, pc)), numpy.array(analog).reshape((apvf, ac)))
             if f and not f % 10000:
                 logging.debug('consumed %d frames in %dkB of frame data',
                               f, (self._handle.tell() - start) / 1000)
-
+        
         logging.info('iterated over %d frames', f)
-
 
 class Writer(Manager):
     '''This class manages the task of writing metadata and frames to a C3D file.
