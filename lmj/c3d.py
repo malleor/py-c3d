@@ -348,11 +348,16 @@ class Manager(object):
         return self.group('ANALOG').get_uint16('USED')
 
     def start_field(self):
-        return self.group('TRIAL').get_uint32('ACTUAL_START_FIELD')
+        if self.group('TRIAL') is not None:
+            return self.group('TRIAL').get_uint32('ACTUAL_START_FIELD')
+        else:
+            return self.header.first_frame
 
     def end_field(self):
-        return self.group('TRIAL').get_uint32('ACTUAL_END_FIELD')
-
+        if self.group('TRIAL') is not None:
+            return self.group('TRIAL').get_uint32('ACTUAL_END_FIELD')
+        else:
+            return self.header.last_frame
 
 class Reader(Manager):
     '''This class provides methods for reading the data in a C3D file.
