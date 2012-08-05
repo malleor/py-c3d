@@ -2,10 +2,42 @@ import matplotlib.pyplot as plt
 from lmj import c3d
 import string as s
 import os
+import struct
+import numpy
+
+class ForcePlates(object):
+	def __init__(self, group):
+		self.num_plates = abs(struct.unpack('h', group.params['USED'].bytes)[0])
+		# corners
+		corners_param = group.params['CORNERS']
+		corners_flat = struct.unpack('f'*3*4*self.num_plates, corners_param.bytes)
+		self.corners = numpy.reshape(corners_flat, (self.num_plates, 4, 3))
+		# origin
+		origin_param = group.params['ORIGIN']
+		origin_flat = struct.unpack('f'*3*self.num_plates, origin_param.bytes)
+		self.origin = numpy.reshape(origin_flat, (self.num_plates, 3))
+	
+	def write(self, group):
+		pass
+	
+	def plot(self, fig=None):
+		f = plt.figure(fig or 'Force plates'); plt.clf()
+		a = f.gca(projection='3d')
+		colors = map(lambda x: x, 'rbgcmyk'[::-1])
+		for i in xrange(self.num_plates):
+			c = colors.pop()
+			# corners
+			x, y, z = zip(*self.corners[i])
+			a.scatter(x, y, z, c=c)
+			# origin
+			x, y, z = self.origin[i]
+			a.scatter(x, y, z, c=c)
+		plt.show()
 
 class C3DContent:
 	def __init__(self, path):
 		# load the c3d
+		self.file = path
 		self.reader = c3d.Reader(open(path, 'rb'))
 		
 		# get data
@@ -19,6 +51,10 @@ class C3DContent:
 			label = s.strip(labels_raw.bytes[label_len*i:label_len*(i+1)], ' ')
 			if C3DContent._is_marker(label):
 				self.labels[label] = i
+		
+		# get force plates info
+		fp_group = self.reader.group('FORCE_PLATFORM')
+		self.force_plates = ForcePlates(fp_group)
 
 	def plot(self, marker_index, fig=None, limits=None, mstyle=None):
 		'''Plots a video signal of given index.'''
