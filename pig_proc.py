@@ -36,25 +36,43 @@ class ForcePlates(object):
 
 class C3DContent:
 	def __init__(self, path):
+		from copy import deepcopy
+		import logging
+		
+		log = logging.FileHandler(path+'_read.log', 'wt')
+		log.setLevel(logging.DEBUG)
+		logging.root.addHandler(log)
+		
 		# load the c3d
 		self.file = path
-		self.reader = c3d.Reader(open(path, 'rb'))
+		self._reader = c3d.Reader(open(path, 'rb')) # TODO: remove from self
 		
-		# get data
-		self.video, self.analog = zip(*self.reader.read_frames())
+		# get a copy of the header
+		self.header = deepcopy(self._reader.header)
+		
+		# get a copy of parameters
+		self.groups = deepcopy(self._reader._groups)
+		
+		# get a copy of video and analog data
+		self.video, self.analog = zip(*self._reader.read_frames())
 		
 		# get marker labels
-		labels_raw = self.reader.group('POINT').params['LABELS']
+		labels_raw = self.getgroup('POINT').params['LABELS']
 		label_len, num_markers = labels_raw.dimensions
 		self.labels = {}
 		for i in xrange(num_markers):
-			label = s.strip(labels_raw.bytes[label_len*i:label_len*(i+1)], ' ')
+			label = labels_raw.bytes[label_len*i:label_len*(i+1)].strip(' ')
 			if C3DContent._is_marker(label):
 				self.labels[label] = i
 		
 		# get force plates info
-		fp_group = self.reader.group('FORCE_PLATFORM')
+		fp_group = self.getgroup('FORCE_PLATFORM')
 		self.force_plates = ForcePlates(fp_group)
+		
+		logging.root.removeHandler(log)
+	
+	def getgroup(self, name):
+		return self.groups.get(name.upper(), None)
 
 	def plot(self, marker_index, fig=None, limits=None, mstyle=None):
 		'''Plots a video signal of given index.'''
@@ -66,6 +84,29 @@ class C3DContent:
 			plt.subplot(4, 1, i+1)
 			plt.cla()
 			plt.plot([v[i] for v in marker], marker=mstyle)
+	
+	def save(self, path):
+		import logging
+		
+		log = logging.FileHandler(path+'_write.log', 'wt')
+		log.setLevel(logging.DEBUG)
+		logging.root.addHandler(log)
+		
+		# prepare output
+		handle = open(path, 'wb')
+		writer = c3d.Writer(handle)
+		
+		# write metadata
+		writer.header = self.header
+		writer._groups = self.groups
+		writer.write_metadata()
+		handle.flush()
+		
+		# write video and analog data
+		frames = zip(self.video, self.analog)
+		writer.write_frames(frames)
+		
+		logging.root.removeHandler(log)
 
 	def getmarker(self, index_or_label):
 		'''Retreives a sequence of a specific video signal.'''
@@ -92,24 +133,24 @@ class C3DContent:
 		return (label, [f[index] for f in self.video])
 
 	def getmarkers(self):
-		for label in self.labels.keys():
-			yield self.getmarker(label)
+		for index in self.labels.itervalues():
+			yield self.getmarker(index)
 	
 	@staticmethod
 	def _label_matches(base_label):
-		base_label = s.split(base_label, ':')[-1]
-		base_label = s.lower(base_label)
-		return lambda tested_label: s.lower(tested_label) == base_label or \
-			s.lower(s.split(tested_label, ':')[-1]) == base_label
+		base_label = base_label.split(':')[-1]
+		base_label = base_label.lower()
+		return lambda tested_label: tested_label.lower() == base_label or \
+			tested_label.split(':')[-1].lower() == base_label
 	
 	@staticmethod
 	def _is_marker(label):
-		label = s.split(label, ':')[-1]
-		return len(label) in xrange(4,6) and label == s.upper(label)
+		label = label.split(':')[-1]
+		return len(label) in xrange(4,6) and label == label.upper()
 
 
 def load(path):
-	ext = s.lower(os.path.splitext(path)[1])
+	ext = os.path.splitext(path)[1].lower()
 	if ext != '.c3d':
 		raise ValueError('expected .c3d path, got '+ext)
 	

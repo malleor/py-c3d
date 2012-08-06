@@ -539,7 +539,7 @@ class Writer(Manager):
             point.extend(p.flatten())
             point.tofile(self._handle)
             analog = array.array(format)
-            analog.extend(a)
+            analog.extend(a.reshape(a.size))
             analog.tofile(self._handle)
         self._pad_block()
 
