@@ -76,19 +76,7 @@ class Header(object):
                                  self.label_block,
                                  ''))
 
-        logging.info('''wrote C3D header information:
-  parameter_block: %(parameter_block)s
-      point_count: %(point_count)s
-     analog_count: %(analog_count)s
-      first_frame: %(first_frame)s
-       last_frame: %(last_frame)s
-          max_gap: %(max_gap)s
-     scale_factor: %(scale_factor)s
-       data_block: %(data_block)s
- sample_per_frame: %(sample_per_frame)s
-       frame_rate: %(frame_rate)s
-long_event_labels: %(long_event_labels)s
-      label_block: %(label_block)s''' % self.__dict__)
+        logging.info('wrote C3D header information: \n%s', self)
 
     def read(self, handle):
         '''Read and parse binary header data from a file handle.
@@ -112,8 +100,10 @@ long_event_labels: %(long_event_labels)s
          self.label_block,
          _) = struct.unpack(self.BINARY_FORMAT, handle.read(512))
 
-        logging.info('''loaded C3D header information:
-  parameter_block: %(parameter_block)s
+        logging.info('loaded C3D header information: \n%s', self)
+    
+    def __str__(self):
+        return '''  parameter_block: %(parameter_block)s
       point_count: %(point_count)s
      analog_count: %(analog_count)s
       first_frame: %(first_frame)s
@@ -124,7 +114,7 @@ long_event_labels: %(long_event_labels)s
  sample_per_frame: %(sample_per_frame)s
        frame_rate: %(frame_rate)s
 long_event_labels: %(long_event_labels)s
-      label_block: %(label_block)s''' % self.__dict__)
+      label_block: %(label_block)s''' % self.__dict__
 
 
 class Param(object):
@@ -165,9 +155,6 @@ class Param(object):
         if handle:
             self.read(handle)
 
-    def __repr__(self):
-        return '<Param: %s>' % self.desc
-
     def binary_size(self):
         '''Return the number of bytes needed to store this parameter.'''
         return (
@@ -196,12 +183,7 @@ class Param(object):
         handle.write(struct.pack('B', len(self.desc)))
         handle.write(self.desc)
 
-        logging.info('''wrote C3D parameter information:
-      name: %(name)s
-      desc: %(desc)s
- data_size: %(data_size)s
-dimensions: %(dimensions)s
-     bytes: %(bytes)r''' % self.__dict__)
+        logging.info('wrote C3D parameter information: \n%s', self)
 
     def read(self, handle):
         '''Read binary data for this parameter from a file handle.
@@ -228,12 +210,14 @@ dimensions: %(dimensions)s
         size, = struct.unpack('B', handle.read(1))
         self.desc = size and handle.read(size) or ''
 
-        logging.info('''loaded C3D parameter information:
-      name: %(name)s
+        logging.info('loaded C3D parameter information: \n%s', self)
+    
+    def __str__(self):
+        return '''      name: %(name)s
       desc: %(desc)s
  data_size: %(data_size)s
 dimensions: %(dimensions)s
-     bytes: %(bytes)r''' % self.__dict__)
+     bytes: %(bytes)r''' % self.__dict__
 
 
 class Group(object):
@@ -243,9 +227,6 @@ class Group(object):
         self.name = name
         self.desc = desc
         self.params = {}
-
-    def __repr__(self):
-        return '<Group: %s>' % self.desc
 
     def add_param(self, name, **kwargs):
         self.params[name.upper()] = Param(name.upper(), **kwargs)
@@ -283,6 +264,11 @@ class Group(object):
 
     def get_string(self, key, offset=0):
         return self.params[key].bytes.split()[offset]
+    
+    def __str__(self):
+        return ('''   name: %(name)s
+   desc: %(desc)s
+ params: ''' % self.__dict__) + str(self.params.keys())
 
 
 class Manager(object):
@@ -297,12 +283,10 @@ class Manager(object):
         group = self._groups.get(group_id)
 
         if group is None:
-            logging.info('added C3D parameter group #%d: %s: %s',
-                         group_id, name, desc)
             group = self._groups[group_id] = Group(name, desc)
+            logging.info('added C3D parameter group: \n%s', group)
         else:
-            logging.info('using C3D parameter group %s: %s',
-                         group.name, group.desc)
+            logging.debug('using C3D parameter group: \n%s', group)
 
         if name is not None:
             name = name.upper()
