@@ -441,10 +441,12 @@ class Reader(Manager):
 
         # read video and analog data in either float or int format.
         format = 'fi'[self.group('POINT').get_float('SCALE') >= 0]
-        ppvf = self.points_per_frame()      # points per video frame
         pc = 4                              # point coords/'channels'
-        apvf = self.analog_per_frame()      # analog frames per video frame
-        ac = self.header.analog_count/apvf  # analog channels
+        ppvf = self.points_per_frame()      # points per video frame
+        ac = self.analog_per_frame()        # analog frames per video frame
+        apvf = self.header.analog_count/ac  # analog channels
+        logging.info('a frame consists of %d %d-dim points and %d %d-channel analog readouts', 
+			ppvf, pc, apvf, ac)
 
         self._handle.seek((self.header.data_block - 1) * 512)
         start = self._handle.tell()
@@ -539,7 +541,7 @@ class Writer(Manager):
             point.extend(p.flatten())
             point.tofile(self._handle)
             analog = array.array(format)
-            analog.extend(a)
+            analog.extend(a.reshape(a.size))
             analog.tofile(self._handle)
         self._pad_block()
 

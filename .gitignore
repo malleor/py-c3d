@@ -4,5 +4,6 @@
 *.py[oc]
 *.egg-info
 *.c3d
+*.log
 dist
 build
