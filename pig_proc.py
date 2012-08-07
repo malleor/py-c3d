@@ -4,6 +4,7 @@ import string as s
 import os
 import struct
 import numpy
+from copy import deepcopy
 
 class ForcePlates(object):
 	def __init__(self, group):
@@ -34,9 +35,24 @@ class ForcePlates(object):
 			a.scatter(x, y, z, c=c)
 		plt.show()
 
-class C3DContent:
+		
+class Sequence(object):
+	''' A scalar/vector sequence for storing c3d analog and video data. '''
+	
+	def __init__(self, array, name=''):
+		if type(array) != numpy.ndarray:
+			array = numpy.array(array)
+		
+		self.array = deepcopy(array)
+		self.name = name
+	
+	def __str__(self):
+		dims = reduce(lambda s,x: s+'x'+str(x), self.array.shape[1:], '')[1:]
+		return 'Sequence \'%s\' of %d frames, %s scalars each' % (self.name, self.array.shape[0], dims)
+
+
+class C3DContent(object):
 	def __init__(self, path):
-		from copy import deepcopy
 		import logging
 		
 		log = logging.FileHandler(path+'_read.log', 'wt')
@@ -53,17 +69,31 @@ class C3DContent:
 		# get a copy of parameters
 		self.groups = deepcopy(self._reader._groups)
 		
-		# get a copy of video and analog data
-		self.video, self.analog = zip(*self._reader.read_frames())
-		
-		# get marker labels
+		# get video labels
 		labels_raw = self.getgroup('POINT').params['LABELS']
 		label_len, num_markers = labels_raw.dimensions
-		self.labels = {}
-		for i in xrange(num_markers):
-			label = labels_raw.bytes[label_len*i:label_len*(i+1)].strip(' ')
-			if C3DContent._is_marker(label):
-				self.labels[label] = i
+		extract_label = lambda i: labels_raw.bytes[label_len*i:label_len*(i+1)].strip(' ')
+		mask_non_markers = lambda label: label if C3DContent._is_marker(label) else None
+		video_labels = [mask_non_markers(extract_label(i)) for i in xrange(num_markers)]
+		
+		# get video labels
+		labels_raw = self.getgroup('ANALOG').params['LABELS']
+		label_len, num_markers = labels_raw.dimensions
+		extract_label = lambda i: labels_raw.bytes[label_len*i:label_len*(i+1)].strip(' ')
+		analog_labels = [extract_label(i) for i in xrange(num_markers)]
+		
+		# get a copy of video and analog data
+		video, analog = zip(*self._reader.read_frames())
+		num_video_sequences = video[0].shape[0]
+		num_analog_sequences = analog[0].shape[1]
+		make_video_sequence = lambda i: Sequence([f[i] for f in video], video_labels[i])
+		make_analog_sequence = lambda i: Sequence([f[:,i] for f in analog], analog_labels[i])
+		self.video = [make_video_sequence(i) for i in xrange(num_video_sequences) if video_labels[i]]
+		self.analog = [make_analog_sequence(i) for i in xrange(num_analog_sequences)]
+		logging.info('Extracted video sequences:')
+		for s in self.video: logging.info('  ' + str(s))
+		logging.info('Extracted analog sequences:')
+		for s in self.analog: logging.info('  ' + str(s))
 		
 		# get force plates info
 		fp_group = self.getgroup('FORCE_PLATFORM')
@@ -74,9 +104,10 @@ class C3DContent:
 	def getgroup(self, name):
 		return self.groups.get(name.upper(), None)
 
-	def plot(self, marker_index, fig=None, limits=None, mstyle=None):
-		'''Plots a video signal of given index.'''
-		label, marker = self.getmarker(marker_index)
+	def plot(self, marker_index_or_label, fig=None, limits=None, mstyle=None):
+		'''Plots a video signal of given its index or label.'''
+		# TODO: refactor to use sequence objects
+		label, marker = self.getmarker(marker_index_or_label)
 		if limits is not None:
 			marker = marker[limits[0]:limits[1]]
 		plt.figure(fig or 'Marker '+label)
@@ -86,6 +117,9 @@ class C3DContent:
 			plt.plot([v[i] for v in marker], marker=mstyle)
 	
 	def save(self, path):
+		# TODO: refactor to use sequence objects
+		raise NotImplementedError('\'save\' function is currently under construction')
+		
 		import logging
 		
 		log = logging.FileHandler(path+'_write.log', 'wt')
@@ -108,32 +142,16 @@ class C3DContent:
 		
 		logging.root.removeHandler(log)
 
-	def getmarker(self, index_or_label):
+	def getmarker(self, label):
 		'''Retreives a sequence of a specific video signal.'''
-		index = -1
-		label = ''
-		if type(index_or_label) == str:
-			try:
-				label = filter(C3DContent._label_matches(index_or_label), self.labels.keys())[0]
-			except IndexError:
-				raise NameError('label \'%s\' does not match any of stored markers:\n%s' % (label, self.labels.keys()))
-			try:
-				index = self.labels[label]
-			except KeyError:
-				raise NameError('no marker of name \'%s\'' % label) # this should already be covered!
-		elif type(index_or_label) == int:
-			index = index_or_label
-			try:
-				label = [k for k,v in self.labels.iteritems() if v==index][0]
-			except IndexError:
-				raise IndexError('no marker of index %d' % index)
-		else:
-			raise TypeError('\'index_or_label\' should be a marker index or its label')
 		
-		return (label, [f[index] for f in self.video])
+		# TODO: select sequence
+		raise NotImplementedError('\'getmarker\' function is currently under construction')
+		
+		return (sequence.name, sequence.array)
 
 	def getmarkers(self):
-		for index in self.labels.itervalues():
+		for index in video_labels.itervalues():
 			yield self.getmarker(index)
 	
 	@staticmethod
