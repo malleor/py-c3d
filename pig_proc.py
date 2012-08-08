@@ -4,6 +4,8 @@ import string as s
 import os
 import struct
 import numpy
+from numpy import reshape
+from numpy import array as ar
 from copy import deepcopy
 import logging
 
@@ -16,12 +18,12 @@ class ForcePlates(object):
 		# corners
 		corners_param = group.params['CORNERS']
 		corners_flat = struct.unpack('f'*3*4*self.num_plates, corners_param.bytes)
-		self.corners = numpy.reshape(corners_flat, (self.num_plates, 4, 3))
+		self.corners = reshape(corners_flat, (self.num_plates, 4, 3))
 		
 		# origin
 		origin_param = group.params['ORIGIN']
 		origin_flat = struct.unpack('f'*3*self.num_plates, origin_param.bytes)
-		self.origin = numpy.reshape(origin_flat, (self.num_plates, 3))
+		self.origin = reshape(origin_flat, (self.num_plates, 3))
 	
 	def write(self, group):
 		pass
@@ -48,7 +50,7 @@ class Sequence(object):
 	
 	def __init__(self, array, name=''):
 		if type(array) != numpy.ndarray:
-			array = numpy.array(array)
+			array = ar(array)
 		
 		self.array = deepcopy(array)
 		self.name = name
@@ -56,6 +58,12 @@ class Sequence(object):
 	def __str__(self):
 		dims = reduce(lambda s,x: s+'x'+str(x), self.array.shape[1:], '')[1:] + ' scalars' if self.array.ndim > 1 else '1 scalar'
 		return 'Sequence \'%s\' of %d frames, %s each' % (self.name, self.array.shape[0], dims)
+	
+	def crop(self, beg, end):
+		''' Crops the sequence to given limits as frame indices. 
+		Returns a copy of contained array.'''
+		
+		return Sequence(self.array[beg:end], self.name)
 
 
 class C3DContent(object):
@@ -161,8 +169,8 @@ class C3DContent(object):
 num_analog_samples_per_frame: %d''' % (num_frames, len(self.video), len(self.analog), num_analog_samples_per_frame))
 		get_marker = lambda i: [s.array[i] for s in self.video]
 		get_analog_signal = lambda i: [s.array.view().reshape((num_frames,num_analog_samples_per_frame))[i] for s in self.analog]
-		video = tuple(numpy.array(get_marker(i)) for i in xrange(num_frames))
-		analog = tuple(numpy.array(get_analog_signal(i)).T for i in xrange(num_frames))
+		video = tuple(ar(get_marker(i)) for i in xrange(num_frames))
+		analog = tuple(ar(get_analog_signal(i)).T for i in xrange(num_frames))
 		frames = zip(video, analog)
 		writer.write_frames(frames)
 		logging.debug('Written frames.')
@@ -184,6 +192,17 @@ num_analog_samples_per_frame: %d''' % (num_frames, len(self.video), len(self.ana
 			return filter(lambda v: is_good_name(v.name), self.analog)[0]
 		except IndexError:
 			return None
+	
+	def crop_sequences(self, beg, end):
+		''' Crops all stored sequences to given limits as a tuple with 
+		beginning and ending frames. '''
+		
+		num_frames = self.video[0].array.shape[0]
+		num_analog_samples = self.analog[0].array.shape[0]
+		num_analog_samples_per_frame = num_analog_samples / num_frames
+		
+		self.video = map(lambda s: s.crop(beg, end), self.video)
+		self.analog = map(lambda s: s.crop(beg*num_analog_samples_per_frame, end*num_analog_samples_per_frame), self.analog)
 	
 	@staticmethod
 	def _label_matches(base_label):
