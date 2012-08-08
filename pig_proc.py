@@ -54,8 +54,8 @@ class Sequence(object):
 		self.name = name
 	
 	def __str__(self):
-		dims = reduce(lambda s,x: s+'x'+str(x), self.array.shape[1:], '')[1:]
-		return 'Sequence \'%s\' of %d frames, %s scalars each' % (self.name, self.array.shape[0], dims)
+		dims = reduce(lambda s,x: s+'x'+str(x), self.array.shape[1:], '')[1:] + ' scalars' if self.array.ndim > 1 else '1 scalar'
+		return 'Sequence \'%s\' of %d frames, %s each' % (self.name, self.array.shape[0], dims)
 
 
 class C3DContent(object):
@@ -129,9 +129,6 @@ class C3DContent(object):
 	def save(self, path):
 		''' Save the content to a c3d file. '''
 		
-		# TODO: refactor to use sequence objects
-		raise NotImplementedError('\'save\' function is currently under construction')
-		
 		log = logging.FileHandler(path+'_write.log', 'wt')
 		log.setLevel(logging.DEBUG)
 		logging.root.addHandler(log)
@@ -140,16 +137,35 @@ class C3DContent(object):
 		handle = open(path, 'wb')
 		writer = c3d.Writer(handle)
 		
+		# prepare data packaging, update the header
+		num_frames = self.video[0].array.shape[0]
+		num_analog_samples = self.analog[0].array.shape[0]
+		num_analog_samples_per_frame = num_analog_samples / num_frames
+		self.header.point_count = len(self.video)
+		self.header.analog_count = len(self.analog)*num_analog_samples_per_frame
+		self.header.first_frame = 0
+		self.header.last_frame = num_frames
+		
 		# write metadata
 		writer.header = self.header
 		writer._groups = self.groups
 		writer.write_metadata()
 		handle.flush()
+		logging.debug('Written metadata.')
 		
 		# write video and analog data
-		# TODO: video, analog = ...
+		logging.info('''Forming output frames: 
+                  num_frames: %d
+         num_video_sequences: %d
+        num_analog_sequences: %d
+num_analog_samples_per_frame: %d''' % (num_frames, len(self.video), len(self.analog), num_analog_samples_per_frame))
+		get_marker = lambda i: [s.array[i] for s in self.video]
+		get_analog_signal = lambda i: [s.array.view().reshape((num_frames,num_analog_samples_per_frame))[i] for s in self.analog]
+		video = tuple(numpy.array(get_marker(i)) for i in xrange(num_frames))
+		analog = tuple(numpy.array(get_analog_signal(i)).T for i in xrange(num_frames))
 		frames = zip(video, analog)
 		writer.write_frames(frames)
+		logging.debug('Written frames.')
 		
 		logging.root.removeHandler(log)
 
