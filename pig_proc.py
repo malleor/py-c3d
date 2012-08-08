@@ -5,6 +5,7 @@ import os
 import struct
 import numpy
 from copy import deepcopy
+import logging
 
 class ForcePlates(object):
 	''' Information related to force plates measurement. '''
@@ -62,8 +63,6 @@ class C3DContent(object):
 	along with metadata considering the measurement. '''
 	
 	def __init__(self, path):
-		import logging
-		
 		log = logging.FileHandler(path+'_read.log', 'wt')
 		log.setLevel(logging.DEBUG)
 		logging.root.addHandler(log)
@@ -132,8 +131,6 @@ class C3DContent(object):
 		
 		# TODO: refactor to use sequence objects
 		raise NotImplementedError('\'save\' function is currently under construction')
-		
-		import logging
 		
 		log = logging.FileHandler(path+'_write.log', 'wt')
 		log.setLevel(logging.DEBUG)
