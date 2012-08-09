@@ -277,6 +277,8 @@ num_analog_samples_per_frame: %d''' % (num_frames, len(self.video), len(self.ana
 		
 		self.video = map(lambda s: s.crop(beg, end), self.video)
 		self.analog = map(lambda s: s.crop(beg*num_analog_samples_per_frame, end*num_analog_samples_per_frame), self.analog)
+		
+		self.force_plates.analog = self.analog
 	
 	@staticmethod
 	def _label_matches(base_label):
