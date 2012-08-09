@@ -3,6 +3,7 @@ import os
 import struct
 from copy import deepcopy
 import logging
+from itertools import izip
 
 from lmj import c3d
 
@@ -17,7 +18,7 @@ import mpl_toolkits.mplot3d
 class ForcePlates(object):
 	''' Information related to force plates measurement. '''
 	
-	def __init__(self, group):
+	def __init__(self, group, analog):
 		self.num_plates = abs(struct.unpack('h', group.params['USED'].bytes)[0])
 		
 		# corners
@@ -29,16 +30,24 @@ class ForcePlates(object):
 		origin_param = group.params['ORIGIN']
 		origin_flat = struct.unpack('f'*3*self.num_plates, origin_param.bytes)
 		self.origin = reshape(origin_flat, (self.num_plates, 3))
+		
+		# force data
+		self.analog = analog
 	
 	def write(self, group):
 		pass
 	
 	def plot(self, fig=None):
+		''' Plots the force plates and measured 'footprints'. '''
+		
 		f = plt.figure(fig or 'Force plates'); plt.clf()
 		a = f.gca(projection='3d')
-		colors = map(lambda x: x, 'rbgcmyk'[::-1])
+		colors = 'rbgcmyk'
+		
+		prints = self.forces()
+		
 		for i in xrange(self.num_plates):
-			c = colors.pop()
+			c = colors[i]
 			
 			# corners
 			x, y, z = zip(*self.corners[i])
@@ -47,9 +56,39 @@ class ForcePlates(object):
 			# origin
 			x, y, z = self.origin[i]
 			a.scatter(x, y, z, c=c)
-		plt.show()
-
+			
+			# footprints
+			x, y, z = prints.next()
+			every = 20
+			a.scatter(x[::every], y[::every], z[::every], c=colors[i])
 		
+		plt.show()
+	
+	def _calc_forces(self, fx, fy, fz, mx, my, mz):
+		min_load = 100. # [Nmm]
+		xgen = (n/d if abs(m)>min_load else 0. for n,d,m in zip(my.array,fz.array,fz.array))
+		ygen = (n/d if abs(m)>min_load else 0. for n,d,m in zip(mx.array,fz.array,fz.array))
+		zgen = (0. for i in xrange(fx.array.size))
+		for x, y, z in izip(xgen, ygen, zgen):
+			yield (x, y, z)
+	
+	def forces(self):
+		''' Calculates and returns forces trajectories for each force plate. '''
+		
+		for i in xrange(len(self.analog) / 6):
+			# get force x,y in local coords
+			pgen = self._calc_forces(*self.analog[i*6:i*6+6])
+			x, y, z = zip(*filter(lambda pt: pt[0]*pt[1] != 0, pgen))
+			
+			# move to plate's center
+			cx, cy, cz = numpy.mean(self.corners[i], 0)
+			x = numpy.add(x, cx)
+			y = numpy.add(y, cy)
+			z = numpy.add(z, cz)
+			
+			yield (x, y, z)
+
+
 class Sequence(object):
 	''' A scalar/vector sequence for storing c3d analog and video data. '''
 	
@@ -120,24 +159,49 @@ class C3DContent(object):
 		
 		# get force plates info
 		fp_group = get_param_group('FORCE_PLATFORM')
-		self.force_plates = ForcePlates(fp_group)
+		self.force_plates = ForcePlates(fp_group, self.analog)
 		
 		logging.root.removeHandler(log)
 
 	def plot(self, label, fig=None, limits=None, mstyle=None):
-		''' Plots a video signal of given its index or label. '''
+		''' Plots a signal of given its index or label. '''
 		
 		sequence = self.find_video(label) or self.find_analog(label)
 		if not sequence: 
 			raise ValueError('sequence not found')
 		array = sequence.array[limits[0]:limits[1]] if limits else sequence.array
 		
-		plt.figure(fig or 'Sequence \'%s\'' % sequence.name)
+		plt.figure(fig or 'Sequence \'%s\' - plots' % sequence.name)
 		dims = array.shape[1] if array.ndim > 1 else 1
 		for i in xrange(dims):
 			plt.subplot(dims, 1, i+1)
 			plt.cla()
 			plt.plot([v[i] for v in array] if array.ndim > 1 else array, marker=mstyle)
+
+	def plot3(self, label=None, fig=None, limits=None, color=None, clear=True):
+		''' Plots a marker in 3D. '''
+		
+		if not label:
+			# plot all markers
+			from numpy.random import rand
+			fig = fig or 'All sequences - 3D view'
+			for s in self.video:
+				self.plot3(label=s.name, fig=fig, limits=limits, color=color or tuple(rand(3)), clear=clear)
+				clear = False
+		else:
+			# plot a specific marker
+			sequence = self.find_video(label)
+			if not sequence: 
+				raise ValueError('sequence not found')
+				
+			f = plt.figure(fig or 'Sequence \'%s\' - 3D view' % sequence.name)
+			if clear: plt.clf()
+			a = f.gca(projection='3d')
+			
+			array = sequence.array[limits[0]:limits[1]] if limits else sequence.array
+			x, y, z = tuple(numpy.split(array, 4, axis=1))[:3]
+			
+			a.scatter(x, y, z, c=color or 'r', label=sequence.name)
 	
 	def save(self, path):
 		''' Save the content to a c3d file. '''
