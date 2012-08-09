@@ -435,11 +435,15 @@ class Reader(Manager):
         self._handle.seek((self.header.data_block - 1) * 512)
         start = self._handle.tell()
         f = 0
-        for f in xrange(self.end_field() - self.start_field() + 1):
-            points = array.array(format)
-            points.fromfile(self._handle, pc * ppvf)
-            analog = array.array(format)
-            analog.fromfile(self._handle, ac * apvf)
+        num_frames = self.end_field() - self.start_field() + 1
+        for f in xrange(num_frames):
+            try:
+                points = array.array(format)
+                points.fromfile(self._handle, pc * ppvf)
+                analog = array.array(format)
+                analog.fromfile(self._handle, ac * apvf)
+            except EOFError as e:
+                raise EOFError('premature end of file! read %d frames, need %d more' % (f, num_frames-f))
             yield (numpy.array(points).reshape((ppvf, pc)), numpy.array(analog).reshape((apvf, ac)))
             if f and not f % 10000:
                 logging.debug('consumed %d frames in %dkB of frame data',
