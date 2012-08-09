@@ -1,13 +1,18 @@
-import matplotlib.pyplot as plt
-from lmj import c3d
 import string as s
 import os
 import struct
+from copy import deepcopy
+import logging
+
+from lmj import c3d
+
 import numpy
 from numpy import reshape
 from numpy import array as ar
-from copy import deepcopy
-import logging
+
+import matplotlib.pyplot as plt
+import mpl_toolkits.mplot3d
+
 
 class ForcePlates(object):
 	''' Information related to force plates measurement. '''
@@ -152,7 +157,12 @@ class C3DContent(object):
 		self.header.point_count = len(self.video)
 		self.header.analog_count = len(self.analog)*num_analog_samples_per_frame
 		self.header.first_frame = 0
-		self.header.last_frame = num_frames
+		self.header.last_frame = num_frames-1
+		trial_group = self.groups.get('TRIAL', None)
+		trial_group.params['ACTUAL_START_FIELD'].bytes = struct.pack('I', self.header.first_frame)
+		trial_group.params['ACTUAL_END_FIELD'].bytes = struct.pack('I', self.header.last_frame)
+		point_group = self.groups.get('POINT', None)
+		point_group.params['USED'].bytes = struct.pack('H', self.header.point_count)
 		
 		# write metadata
 		writer.header = self.header
