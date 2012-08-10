@@ -300,18 +300,20 @@ def load(path):
 	
 	return C3DContent(path)
 
-def save(content, dirpath, limits=None, separate=True, markers=None):
+def _trans(x, y, z):
+	return (-x-60., z+35., y-290.)
+
+def save_traj(content, dirpath, limits=None, separate=True, markers=None):
 	'''Saves c3d trajectories into a txt file.
 	
 	content   - C3DContent instance with trajectories
 	dirpath   - directory path to be written into
-	limits    - tuple (beg,end) for trajectories cropping (default: no cropping)
+	limits    - collection with samples to save (default: no cropping)
 	separate  - write each trajectory into a separate file? (default: yes)
-	markers   - list of markers to be written (default: all)
+	markers   - list of marker labels to be written (default: all)
 	'''
 	
-	# TODO: refactor to use sequence objects
-	raise NotImplementedError('\'save\' function is currently under construction')
+	assert type(content) == C3DContent
 	
 	if not os.path.isdir(dirpath):
 		dirpath = os.path.split(dirpath)[0]
@@ -319,19 +321,39 @@ def save(content, dirpath, limits=None, separate=True, markers=None):
 	make_path = lambda filename: os.path.join(dirpath, filename+'.txt')
 	h = open(make_path('all_markers'), 'wt') if not separate else None
 	
-	for label, marker in content.getmarkers():
+	for sequence in content.video:
+		label = sequence.name
+		marker = sequence.array
 		if markers is not None and len(filter(C3DContent._label_matches(label), markers)) == 0:
 			continue
 		
 		filename = s.split(label, ':')[-1] if separate else None
 		h = open(make_path(filename), 'wt') if separate else h
 		
-		marker = marker[limits[0]:limits[1]] if limits else marker
+		marker = [marker[i] for i in limits] if limits else marker
 		
 		for pt in marker:
 			if pt[3] != -1.0:
-				h.write('%f %f %f\n' % (pt[0],pt[1],pt[2]))
+				#h.write('%f %f %f\n' % (pt[0],pt[1],pt[2]))
+				h.write('%f %f %f\n' % _trans(*tuple(pt)[:3])) # transformed
 	
 	markers_str = 'all markers' if markers is None else 'markers:\n' + str(markers) + '\n'
 	output_str = 'directory:\n' + dirpath if separate else 'file:\n' + h.name
 	print 'Written', markers_str, 'to', output_str
+
+def save_force_plates(content, dirpath, limits=None):
+	assert type(content) == C3DContent
+	f = content.force_plates
+	make_path = lambda filename: os.path.join(dirpath, filename+'.txt')
+	
+	# save footprints
+	ind = 1
+	for plate_print in f.forces():
+		h = open(make_path('prints_%d'%ind), 'wt'); ind+=1
+		
+		plate_print = zip(*plate_print)
+		plate_print = [plate_print[i] for i in limits] if limits else plate_print
+		
+		for x, y, z in plate_print:
+			h.write('%f %f %f\n' % _trans(x, y, z)) # transformed
+		print 'Written force plates\' data to', h.name
