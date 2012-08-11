@@ -5,5 +5,7 @@
 *.egg-info
 *.c3d
 *.log
+*.txt
+data/*
 dist
 build

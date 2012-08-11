@@ -9,7 +9,7 @@ from lmj import c3d
 
 import numpy
 from numpy import reshape
-from numpy import array as ar
+from numpy import array as ar, matrix as mx
 
 import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d
@@ -294,6 +294,8 @@ num_analog_samples_per_frame: %d''' % (num_frames, len(self.video), len(self.ana
 
 
 def load(path):
+	''' Load a C3D file, return a C3DContent object. '''
+	
 	ext = os.path.splitext(path)[1].lower()
 	if ext != '.c3d':
 		raise ValueError('expected .c3d path, got '+ext)
@@ -336,15 +338,22 @@ def load_markers(path):
 	
 	return markers.itervalues() # generator of Sequences
 
+_Trans = {
+	'A': mx([[-1,0,0],[0,0,1],[0,1,0]], dtype=numpy.float),
+	'B': mx([0,0,0], dtype=numpy.float).T
+	#'B': mx([-60,35,-290]).T
+}
 def _trans(x, y, z):
-	return (-x-60., z+35., y-290.)
+	return tuple((_Trans['A']*mx([x,y,z]).T+_Trans['B']).flatten().tolist()[0])
+def _trans_inv(x, y, z):
+	return tuple((_Trans['A'].getI()*(mx([x,y,z]).T-_Trans['B'])).flatten().tolist()[0])
 
 def save_traj(content, dirpath, limits=None, separate=True, markers=None):
-	'''Saves c3d trajectories into a txt file.
+	'''Save C3D trajectories into a txt file.
 	
 	content   - C3DContent instance with trajectories
 	dirpath   - directory path to be written into
-	limits    - collection with samples to save (default: no cropping)
+	limits    - collection with samples to save (default: all)
 	separate  - write each trajectory into a separate file? (default: yes)
 	markers   - list of marker labels to be written (default: all)
 	'''
@@ -355,7 +364,14 @@ def save_traj(content, dirpath, limits=None, separate=True, markers=None):
 		dirpath = os.path.split(dirpath)[0]
 	
 	make_path = lambda filename: os.path.join(dirpath, filename+'.txt')
-	h = open(make_path('all_markers'), 'wt') if not separate else None
+	h = None
+	if not separate:
+		filename = 'all_markers' if not markers else 'some_markers'
+		if limits and len(limits) == 1:
+			filename += '_%d' % limits[0]
+		elif limits:
+			filename += '_%d_frames' % len(limits)
+		h = open(make_path(filename), 'wt')
 	
 	for sequence in content.video:
 		label = sequence.name
@@ -371,7 +387,8 @@ def save_traj(content, dirpath, limits=None, separate=True, markers=None):
 		for pt in marker:
 			if pt[3] != -1.0:
 				#h.write('%f %f %f\n' % (pt[0],pt[1],pt[2]))
-				h.write('%f %f %f\n' % _trans(*tuple(pt)[:3])) # transformed
+				pt = _trans(*tuple(pt)[:3])
+				h.write('%f %f %f\n' % pt) # transformed
 	
 	markers_str = 'all markers' if markers is None else 'markers:\n' + str(markers) + '\n'
 	output_str = 'directory:\n' + dirpath if separate else 'file:\n' + h.name
