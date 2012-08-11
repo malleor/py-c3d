@@ -300,6 +300,42 @@ def load(path):
 	
 	return C3DContent(path)
 
+def load_markers(path):
+	r''' Load markers from a CSV file. Returns a generator of Sequences.
+	
+	File format:
+	[Frame]\t<Label1>\t<Label2>\t...
+	<Frame1>\t<X11>\t<Y11>\t<Z11>\t<R11>\t<X21>\t<Y21>\t<Z21>\t<R21>\t...
+	<Frame2>\t<X12>\t<Y12>\t<Z12>\t<R12>\t<X22>\t<Y22>\t<Z22>\t<R22>\t...
+	...
+	'''
+	
+	ext = os.path.splitext(path)[1].lower()
+	if ext != '.csv':
+		raise ValueError('expected .csv path, got '+ext)
+	
+	h = open(path)
+	
+	labels = h.readline().split('\t')[1:-1]
+	markers = dict(zip(labels, [[] for label in labels]))
+	
+	for line in h:
+		line = line.rstrip('\n\t').split('\t')
+		if not line:
+			break
+		frame = line.pop(0)
+		for label in labels:
+			pt = [float(line.pop(0)) for i in xrange(4)]
+			markers[label].append(pt)
+	
+	for l, m in markers.iteritems():
+		markers[l] = Sequence(ar(m), name=l)
+	
+	#print 'Loaded markers:'
+	#for m in markers.itervalues(): print '', m
+	
+	return markers.itervalues() # generator of Sequences
+
 def _trans(x, y, z):
 	return (-x-60., z+35., y-290.)
 
