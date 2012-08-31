@@ -4,6 +4,7 @@ import struct
 from copy import deepcopy
 import logging
 from itertools import izip
+import sys
 
 from lmj import c3d
 
@@ -108,6 +109,19 @@ class Sequence(object):
 		Returns a copy of contained array.'''
 		
 		return Sequence(self.array[beg:end], self.name)
+	
+	def plot(self, fig=None, limits=None, clear=True, **kwargs):
+		''' Plots the sequence. '''
+		
+		array = self.array[limits[0]:limits[1]] if limits else self.array
+		
+		plt.figure(fig or 'Sequence \'%s\' - plots' % self.name)
+		dims = array.shape[1] if array.ndim > 1 else 1
+		for i in xrange(dims):
+			plt.subplot(dims, 1, i+1)
+			if clear:
+				plt.cla()
+			plt.plot([v[i] for v in array] if array.ndim > 1 else array, **kwargs)
 
 
 class C3DContent(object):
@@ -163,20 +177,14 @@ class C3DContent(object):
 		
 		logging.root.removeHandler(log)
 
-	def plot(self, label, fig=None, limits=None, mstyle=None):
+	def plot(self, label, **kwargs):
 		''' Plots a signal of given its index or label. '''
 		
 		sequence = self.find_video(label) or self.find_analog(label)
 		if not sequence: 
 			raise ValueError('sequence not found')
-		array = sequence.array[limits[0]:limits[1]] if limits else sequence.array
 		
-		plt.figure(fig or 'Sequence \'%s\' - plots' % sequence.name)
-		dims = array.shape[1] if array.ndim > 1 else 1
-		for i in xrange(dims):
-			plt.subplot(dims, 1, i+1)
-			plt.cla()
-			plt.plot([v[i] for v in array] if array.ndim > 1 else array, marker=mstyle)
+		sequence.plot(**kwargs)
 
 	def plot3(self, label=None, fig=None, limits=None, color=None, clear=True):
 		''' Plots a marker in 3D. '''
@@ -227,6 +235,12 @@ class C3DContent(object):
 		trial_group.params['ACTUAL_END_FIELD'].bytes = struct.pack('I', self.header.last_frame)
 		point_group = self.groups.get('POINT', None)
 		point_group.params['USED'].bytes = struct.pack('H', self.header.point_count)
+		labels_raw = self.groups.get('POINT', None).params['LABELS']
+		max_label_len = max([len(s.name) for s in self.video])
+		labels_raw.dimensions = (max_label_len, len(self.video))
+		labels_raw.bytes = ''
+		for s in self.video:
+			labels_raw.bytes += s.name + ' '*(max_label_len-len(s.name))
 		
 		# write metadata
 		writer.header = self.header
@@ -318,17 +332,32 @@ def load_markers(path):
 	
 	h = open(path)
 	
-	labels = h.readline().split('\t')[1:-1]
+	labels = [label.split('_')[0] for label in h.readline().rstrip('\n\t').split('\t')[1:]][::4]
+	print labels
 	markers = dict(zip(labels, [[] for label in labels]))
+	error = None
 	
 	for line in h:
-		line = line.rstrip('\n\t').split('\t')
+		line = line.rstrip('\n\t').replace(',','.').split('\t')
 		if not line:
 			break
 		frame = line.pop(0)
-		for label in labels:
-			pt = [float(line.pop(0)) for i in xrange(4)]
-			markers[label].append(pt)
+		print 'Frame %s...' % frame,
+		was_ok = 0
+		try:
+			for label in labels:
+				pt = [float(line.pop(0)) for i in xrange(4)]
+				markers[label].append(pt)
+				was_ok += 1
+			print 'OK'
+		except:
+			error = sys.exc_info()
+			print 'FAILED',
+			print ('(%d/%d OK)' % (was_ok, len(labels))) if was_ok else None
+			
+	if error:
+		print 'Failed to load markers. Latest error: %s at line %d' % (error[1], error[2].tb_lineno)
+		return error
 	
 	for l, m in markers.iteritems():
 		markers[l] = Sequence(ar(m), name=l)
@@ -348,17 +377,17 @@ def _trans(x, y, z):
 def _trans_inv(x, y, z):
 	return tuple((_Trans['A'].getI()*(mx([x,y,z]).T-_Trans['B'])).flatten().tolist()[0])
 
-def save_traj(content, dirpath, limits=None, separate=True, markers=None):
+def save_traj(content, dirpath, limits=None, separate=True, markers=None, transform=True):
 	'''Save C3D trajectories into a txt file.
 	
-	content   - C3DContent instance with trajectories
+	content   - C3DContent instance with trajectories or a collection of trajectories
 	dirpath   - directory path to be written into
 	limits    - collection with samples to save (default: all)
 	separate  - write each trajectory into a separate file? (default: yes)
 	markers   - list of marker labels to be written (default: all)
 	'''
 	
-	assert type(content) == C3DContent
+	sequences = content.video if type(content) == C3DContent else content
 	
 	if not os.path.isdir(dirpath):
 		dirpath = os.path.split(dirpath)[0]
@@ -373,7 +402,7 @@ def save_traj(content, dirpath, limits=None, separate=True, markers=None):
 			filename += '_%d_frames' % len(limits)
 		h = open(make_path(filename), 'wt')
 	
-	for sequence in content.video:
+	for sequence in sequences:
 		label = sequence.name
 		marker = sequence.array
 		if markers is not None and len(filter(C3DContent._label_matches(label), markers)) == 0:
@@ -386,9 +415,10 @@ def save_traj(content, dirpath, limits=None, separate=True, markers=None):
 		
 		for pt in marker:
 			if pt[3] != -1.0:
-				#h.write('%f %f %f\n' % (pt[0],pt[1],pt[2]))
-				pt = _trans(*tuple(pt)[:3])
-				h.write('%f %f %f\n' % pt) # transformed
+				pt = tuple(pt)[:3]
+				if transform:
+					pt = _trans(*pt)
+				h.write('%f %f %f\n' % pt)
 	
 	markers_str = 'all markers' if markers is None else 'markers:\n' + str(markers) + '\n'
 	output_str = 'directory:\n' + dirpath if separate else 'file:\n' + h.name
@@ -410,3 +440,9 @@ def save_force_plates(content, dirpath, limits=None):
 		for x, y, z in plate_print:
 			h.write('%f %f %f\n' % _trans(x, y, z)) # transformed
 		print 'Written force plates\' data to', h.name
+
+def inject_video(content, new_video, time_offset):
+	''' Replaces the video sequences in the c3d content, preserving analog
+	data aligned with respect to given time offset. '''
+	
+	raise NotImplementedError('coming soon enough...')
